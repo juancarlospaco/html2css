@@ -18,7 +18,7 @@
 
 # metadata
 " Ninja HTML to CSS "
-__version__ = ' 0.1 '
+__version__ = ' 0.2 '
 __license__ = ' GPL '
 __author__ = ' juancarlospaco '
 __email__ = ' juancarlospaco@ubuntu.com '
@@ -35,6 +35,9 @@ from BeautifulSoup import BeautifulSoup
 from os import linesep
 import re
 from sets import Set
+from datetime import datetime
+from getpass import getuser
+from random import choice
 
 from PyQt4.QtGui import QIcon, QAction, QInputDialog
 
@@ -43,41 +46,64 @@ from ninja_ide.core import plugin
 
 # constants
 css_template = "{}{}{}{}{}{}{}{}{}"
+placeholders = ('margin:0', 'padding:0', 'border:0', 'font-size:100%',
+                'font:inherit', 'vertical-align:baseline', 'line-height:1')
+css_2_ignore = ('head', 'meta', 'noscript', 'script', 'style', 'link', 'no-js',
+                'title', 'object', 'col', 'colgroup', 'option', 'param',
+                'audio', 'basefont', 'isindex', 'svg', 'area', 'embed', 'br')
 
 
 ###############################################################################
 
 
-class Css_Builder(object):
-    ' class to build CSS3 from HTML5 '
-    css = ''
+class Main(plugin.Plugin):
+    " Main Class "
+    def initialize(self, *args, **kwargs):
+        " Init Main Class "
+        super(Main, self).initialize(*args, **kwargs)
+        self.locator.get_service("menuApp").add_action(QAction(QIcon.fromTheme("edit-select-all"), "HTML to CSS", self, triggered=lambda: self.locator.get_service("editor").add_editor(content=self.make_css(str(self.locator.get_service("editor").get_actual_tab().textCursor().selectedText().encode("utf-8").strip()).lower()), syntax='css')))
 
-    def __init__(self, html):
-        ' init class '
+    def make_css(self, html):
+        ' make css '
         indnt = ' ' * int(QInputDialog.getInteger(None, __doc__,
                           " CSS Indentation Spaces: ", 4, 0, 8, 2)[0])
-        self.soup = BeautifulSoup(BeautifulSoup(html).prettify())
-        previously_styled, css = ['head'], '@charset "utf-8";{}'.format(linesep)
+        plchs = QInputDialog.getItem(None, __doc__, "CSS Placeholder values?",
+                               ['Blank Empty CSS', 'Placeholders'], 0, False)[0]
+        p = True if 'Placeholders' in plchs else False
+        self.soup = self.get_soup(html)
+        css, previously_styled = '@charset "utf-8";', []
+        css += '/*{} by {}*/{}'.format(datetime.now().isoformat().split('.')[0],
+                                       getuser(), linesep * 2)
+        previously_styled.append(css_2_ignore)
         for part in self.get_tags():
             if part not in previously_styled:
-                css += '{}{}{}{}{}{}{}'.format(part, '{', linesep,
-                                               indnt, linesep, '}', linesep)
+                css += '{}{}{}{}{}{}{}'.format(part, '{', linesep, indnt,
+                       choice(placeholders) + linesep if p is True else linesep,
+                       '}', linesep)
                 previously_styled.append(part)
-
+        css += '/*{}*/{}'.format('-' * 76, linesep)
         for part in self.get_ids():
             if part not in previously_styled:
                 css += '/* {} */{}'.format('_'.join(part).lower(), linesep)
-                css += css_template.format(part[0], '#', part[1], '{', linesep,
-                                           indnt, linesep, '}', linesep)
+                css += css_template.format('', '#', part[1], '{', linesep,
+                       indnt,
+                       choice(placeholders) + linesep if p is True else linesep,
+                       '}', linesep)
                 previously_styled.append(part)
-
+        css += '/*{}*/{}'.format('-' * 76, linesep)
         for part in self.get_classes():
             if part not in previously_styled:
                 css += '/* {} */{}'.format('_'.join(part).lower(), linesep)
-                css += css_template.format(part[0], '.', part[1], '{', linesep,
-                                           indnt, linesep, '}', linesep)
+                css += css_template.format('', '.',
+                       ',.'.join(part[1].split(' ')), '{', linesep, indnt,
+                       choice(placeholders) + linesep if p is True else linesep,
+                       '}', linesep)
                 previously_styled.append(part)
-        self.css = css.strip()
+        return css.strip()
+
+    def get_soup(self, html):
+        ' get your soup '
+        return BeautifulSoup(BeautifulSoup(html).prettify())
 
     def get_tags(self):
         " get all tags in the html "
@@ -107,14 +133,6 @@ class Css_Builder(object):
                 attrs_dict[attr[0]] = attr[1]
             tags.append((tag.name, attrs_dict['id']))
         return sorted(list(Set(tags)))
-
-
-class Main(plugin.Plugin):
-    " Main Class "
-    def initialize(self, *args, **kwargs):
-        " Init Main Class "
-        super(Main, self).initialize(*args, **kwargs)
-        self.locator.get_service("menuApp").add_action(QAction(QIcon.fromTheme("edit-select-all"), "HTML to CSS", self, triggered=lambda: self.locator.get_service("editor").add_editor(content=Css_Builder(str(self.locator.get_service("editor").get_actual_tab().textCursor().selectedText().encode("utf-8").strip()).lower()).css, syntax='css')))
 
 
 ###############################################################################
